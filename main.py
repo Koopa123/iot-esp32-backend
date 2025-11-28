@@ -3,69 +3,82 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# Guardará la conexión WebSocket del ESP32
+# Guardar conexiones
 esp32_ws: WebSocket | None = None
+app_ws: WebSocket | None = None
 
 
-# ===========================
-#  WEBSOCKET PARA EL ESP32
-# ===========================
+# =====================================
+#   WEBSOCKET DEL ESP32
+# =====================================
 @app.websocket("/ws")
 async def websocket_esp32(websocket: WebSocket):
     global esp32_ws
-
     await websocket.accept()
     esp32_ws = websocket
-    print("ESP32 conectado")
+    print("ESP32 conectado!")
 
     try:
         while True:
             data = await websocket.receive_text()
-            print("ESP32 envió:", data)
+            print("ESP32 dijo:", data)
+            # (Opcional: reenviar datos al APP)
+            if app_ws:
+                await app_ws.send_text(f"ESP32:{data}")
 
     except WebSocketDisconnect:
         print("ESP32 desconectado")
         esp32_ws = None
 
 
-# ===========================
-#  FUNCIÓN PARA ENVIAR COMANDO AL ESP32
-# ===========================
-async def enviar_al_esp32(cmd: str):
-    if esp32_ws is None:
-        return False
+# =====================================
+#   WEBSOCKET DEL APP (Flutter)
+# =====================================
+@app.websocket("/app")
+async def websocket_app(websocket: WebSocket):
+    global app_ws
+    await websocket.accept()
+    app_ws = websocket
+    print("Flutter conectado!")
+
     try:
-        await esp32_ws.send_text(cmd)
-        return True
-    except:
-        return False
+        while True:
+            cmd = await websocket.receive_text()
+            print("Flutter envió:", cmd)
+
+            # Reenviar comando al ESP32
+            if esp32_ws:
+                await esp32_ws.send_text(cmd)
+            else:
+                await websocket.send_text("ERROR: ESP32 no conectado")
+
+    except WebSocketDisconnect:
+        print("Flutter desconectado")
+        app_ws = None
 
 
-# ===========================
-#  API PUBLICA PARA TU CELULAR / HTML / APK
-# ===========================
+# =====================================
+#   API HTTP PARA PRUEBAS DESDE EL NAVEGADOR
+# =====================================
 @app.get("/send/{cmd}")
 async def send_command(cmd: str):
+    if esp32_ws is None:
+        return JSONResponse({"status": "error", "mensaje": "ESP32 no conectado"}, status_code=500)
 
-    enviado = await enviar_al_esp32(cmd)
-
-    if not enviado:
-        return JSONResponse(
-            {"status": "error", "mensaje": "ESP32 no está conectado"},
-            status_code=500
-        )
-
-    return {"status": "ok", "comando": cmd}
+    try:
+        await esp32_ws.send_text(cmd)
+        return {"status": "ok", "comando": cmd}
+    except:
+        return JSONResponse({"status": "error", "mensaje": "Error enviando al ESP32"}, status_code=500)
 
 
-# ===========================
-#  RUTAS ESPECIFICAS (OPCIONAL)
-# ===========================
 @app.get("/")
 async def root():
-    return {"mensaje": "API IoT funcionando"}
+    return {"status": "OK", "message": "Servidor IoT funcionando"}
 
-
-@app.get("/estado/esp32")
+@app.get("/estado")
 async def estado():
-    return {"conectado": esp32_ws is not None}
+    return {
+        "ESP32": esp32_ws is not None,
+        "Flutter": app_ws is not None
+    }
