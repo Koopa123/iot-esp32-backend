@@ -12,9 +12,19 @@ class Comando(BaseModel):
 class Estado(BaseModel):
     temp: float | None = None
     hum: float | None = None
+
     puerta: str | None = None
     garage: str | None = None
-    luces: str | None = None
+
+    cocina: str | None = None
+    sala: str | None = None
+    dormitorio: str | None = None
+
+    grupoA: str | None = None
+    grupoB: str | None = None
+
+    pir: str | None = None
+    ultrasonico: str | None = None
 
 
 # ============================
@@ -25,11 +35,20 @@ ultimo_comando = {"accion": "ninguno"}
 estado_esp32 = {
     "temp": 0.0,
     "hum": 0.0,
+    
     "puerta": "desconocido",
     "garage": "desconocido",
-    "luces": "desconocido"
-}
 
+    "cocina": "off",
+    "sala": "off",
+    "dormitorio": "off",
+
+    "grupoA": "off",
+    "grupoB": "off",
+
+    "pir": "inactivo",
+    "ultrasonico": "inactivo"
+}
 
 # ============================
 #   RUTA PRINCIPAL
@@ -44,27 +63,19 @@ def home():
 # ============================
 @app.post("/comando")
 def recibir_comando(cmd: Comando):
-    """
-    Guarda el comando enviado por la app.
-    El ESP32 lo leerá una sola vez.
-    """
     global ultimo_comando
     ultimo_comando = {"accion": cmd.accion}
     return {"status": "ok", "accion_guardada": cmd.accion}
 
 
 # ============================
-# ESP32 PIDE EL COMANDO → ENTREGAR Y BORRAR
+# ESP32 PIDE COMANDO → ENTREGAR Y BORRAR
 # ============================
 @app.get("/comando")
 def enviar_comando():
-    """
-    El ESP32 obtiene el comando pendiente.
-    Luego se borra para que no se repita.
-    """
     global ultimo_comando
     cmd = ultimo_comando.copy()
-    ultimo_comando = {"accion": "ninguno"}  # prevenir repetición
+    ultimo_comando = {"accion": "ninguno"}
     return cmd
 
 
@@ -73,9 +84,6 @@ def enviar_comando():
 # ============================
 @app.post("/estado")
 def recibir_estado(data: Estado):
-    """
-    El ESP32 actualiza su estado cada 1 segundo.
-    """
     global estado_esp32
     estado_esp32 = data.dict()
     return {"status": "ok", "estado_actualizado": estado_esp32}
@@ -86,7 +94,4 @@ def recibir_estado(data: Estado):
 # ============================
 @app.get("/estado")
 def obtener_estado():
-    """
-    La app obtiene el estado más reciente enviado por el ESP32.
-    """
     return estado_esp32
