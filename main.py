@@ -3,9 +3,9 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# =========================
+# ============================
 # MODELOS
-# =========================
+# ============================
 class Comando(BaseModel):
     accion: str
 
@@ -17,52 +17,76 @@ class Estado(BaseModel):
     luces: str | None = None
 
 
-# =========================
+# ============================
 # VARIABLES GLOBALES
-# =========================
+# ============================
 ultimo_comando = {"accion": "ninguno"}
 
 estado_esp32 = {
-    "temp": None,
-    "hum": None,
-    "puerta": None,
-    "garage": None,
-    "luces": None
+    "temp": 0.0,
+    "hum": 0.0,
+    "puerta": "desconocido",
+    "garage": "desconocido",
+    "luces": "desconocido"
 }
 
 
-# =========================
-# RUTAS PRINCIPALES
-# =========================
-
+# ============================
+#   RUTA PRINCIPAL
+# ============================
 @app.get("/")
 def home():
     return {"mensaje": "Backend IoT funcionando correctamente"}
 
-# ----- APP ENVÍA COMANDO -----
+
+# ============================
+# APP ENVÍA UN COMANDO → GUARDAR
+# ============================
 @app.post("/comando")
 def recibir_comando(cmd: Comando):
+    """
+    Guarda el comando enviado por la app.
+    El ESP32 lo leerá una sola vez.
+    """
     global ultimo_comando
-    ultimo_comando = cmd.dict()
-    return {"status": "ok", "comando_recibido": ultimo_comando}
+    ultimo_comando = {"accion": cmd.accion}
+    return {"status": "ok", "accion_guardada": cmd.accion}
 
-# ----- ESP32 PIDE EL ÚLTIMO COMANDO -----
+
+# ============================
+# ESP32 PIDE EL COMANDO → ENTREGAR Y BORRAR
+# ============================
 @app.get("/comando")
 def enviar_comando():
+    """
+    El ESP32 obtiene el comando pendiente.
+    Luego se borra para que no se repita.
+    """
     global ultimo_comando
     cmd = ultimo_comando.copy()
-    # limpiar el comando para evitar repetirlo
-    ultimo_comando = {"accion": "ninguno"}
+    ultimo_comando = {"accion": "ninguno"}  # prevenir repetición
     return cmd
 
-# ----- ESP32 ENVÍA SU ESTADO -----
+
+# ============================
+# ESP32 ENVÍA SU ESTADO
+# ============================
 @app.post("/estado")
 def recibir_estado(data: Estado):
+    """
+    El ESP32 actualiza su estado cada 1 segundo.
+    """
     global estado_esp32
     estado_esp32 = data.dict()
-    return {"status": "ok"}
+    return {"status": "ok", "estado_actualizado": estado_esp32}
 
-# ----- APP PIDE EL ESTADO DEL ESP32 -----
+
+# ============================
+# APP PIDE EL ESTADO DEL ESP32
+# ============================
 @app.get("/estado")
 def obtener_estado():
+    """
+    La app obtiene el estado más reciente enviado por el ESP32.
+    """
     return estado_esp32
