@@ -1,84 +1,68 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
+from pydantic import BaseModel
 
 app = FastAPI()
 
-# Guardar conexiones
-esp32_ws: WebSocket | None = None
-app_ws: WebSocket | None = None
+# =========================
+# MODELOS
+# =========================
+class Comando(BaseModel):
+    accion: str
+
+class Estado(BaseModel):
+    temp: float | None = None
+    hum: float | None = None
+    puerta: str | None = None
+    garage: str | None = None
+    luces: str | None = None
 
 
-# =====================================
-#   WEBSOCKET DEL ESP32
-# =====================================
-@app.websocket("/ws")
-async def websocket_esp32(websocket: WebSocket):
-    global esp32_ws
-    await websocket.accept()
-    esp32_ws = websocket
-    print("ESP32 conectado!")
+# =========================
+# VARIABLES GLOBALES
+# =========================
+ultimo_comando = {"accion": "ninguno"}
 
-    try:
-        while True:
-            data = await websocket.receive_text()
-            print("ESP32 dijo:", data)
-            # (Opcional: reenviar datos al APP)
-            if app_ws:
-                await app_ws.send_text(f"ESP32:{data}")
-
-    except WebSocketDisconnect:
-        print("ESP32 desconectado")
-        esp32_ws = None
+estado_esp32 = {
+    "temp": None,
+    "hum": None,
+    "puerta": None,
+    "garage": None,
+    "luces": None
+}
 
 
-# =====================================
-#   WEBSOCKET DEL APP (Flutter)
-# =====================================
-@app.websocket("/app")
-async def websocket_app(websocket: WebSocket):
-    global app_ws
-    await websocket.accept()
-    app_ws = websocket
-    print("Flutter conectado!")
-
-    try:
-        while True:
-            cmd = await websocket.receive_text()
-            print("Flutter envió:", cmd)
-
-            # Reenviar comando al ESP32
-            if esp32_ws:
-                await esp32_ws.send_text(cmd)
-            else:
-                await websocket.send_text("ERROR: ESP32 no conectado")
-
-    except WebSocketDisconnect:
-        print("Flutter desconectado")
-        app_ws = None
-
-
-# =====================================
-#   API HTTP PARA PRUEBAS DESDE EL NAVEGADOR
-# =====================================
-@app.get("/send/{cmd}")
-async def send_command(cmd: str):
-    if esp32_ws is None:
-        return JSONResponse({"status": "error", "mensaje": "ESP32 no conectado"}, status_code=500)
-
-    try:
-        await esp32_ws.send_text(cmd)
-        return {"status": "ok", "comando": cmd}
-    except:
-        return JSONResponse({"status": "error", "mensaje": "Error enviando al ESP32"}, status_code=500)
-
+# =========================
+# RUTAS PRINCIPALES
+# =========================
 
 @app.get("/")
-async def root():
-    return {"status": "OK", "message": "Servidor IoT funcionando"}
+def home():
+    return {"mensaje": "Backend IoT funcionando correctamente"}
 
+# ----- APP ENVÍA COMANDO -----
+@app.post("/comando")
+def recibir_comando(cmd: Comando):
+    global ultimo_comando
+    ultimo_comando = cmd.dict()
+    return {"status": "ok", "comando_recibido": ultimo_comando}
+
+# ----- ESP32 PIDE EL ÚLTIMO COMANDO -----
+@app.get("/comando")
+def enviar_comando():
+    global ultimo_comando
+    cmd = ultimo_comando.copy()
+    # limpiar el comando para evitar repetirlo
+    ultimo_comando = {"accion": "ninguno"}
+    return cmd
+
+# ----- ESP32 ENVÍA SU ESTADO -----
+@app.post("/estado")
+def recibir_estado(data: Estado):
+    global estado_esp32
+    estado_esp32 = data.dict()
+    return {"status": "ok"}
+
+# ----- APP PIDE EL ESTADO DEL ESP32 -----
 @app.get("/estado")
-async def estado():
-    return {
-        "ESP32": esp32_ws is not None,
-        "Flutter": app_ws is not None
-    }
+def obtener_estado():
+    return estado_esp32
